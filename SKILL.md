@@ -144,6 +144,20 @@ On first use:
 2. Warn once: "Your keys will be sent through this platform's servers. For safety, use a **sub-account with limited balance** and **Read+Trade permissions only** (no Withdraw)."
 3. Do NOT ask again in the same session
 
+**Path D — OAuth (one-click authorization)**:
+
+For AI assistants with shell access (Claude Code, Cursor, etc.), the OAuth flow lets users authorize their Bybit account with a single click — no manual key creation needed. This uses the `oauth/` module bundled with this skill.
+
+On first use, check if the OAuth credential file exists and has a valid (non-expired) token:
+
+```bash
+node -e "console.log(require('<skill_dir>/modules/oauth.js').getCredentialPath())"
+```
+
+Read the file at that path. If it exists, `created_at + expires_in > now`, and `ai-account` is present → use `ai-account.api_key` and `ai-account.api_secret` as credentials. No further setup needed.
+
+If the file is missing, expired, or incomplete → follow the full [OAuth Authorization Flow](#oauth-authorization-flow) section below.
+
 **Fallback (all platforms)**: If the user provides keys directly in the conversation, accept them but remind once about the more secure alternative for their platform.
 
 **Display rules** (never show full credentials):
@@ -167,9 +181,16 @@ If $BYBIT_API_PRIVATE_KEY_PATH is set:
         Do NOT silently fall back to HMAC.
 Else if $BYBIT_API_SECRET is set:
   → Select HMAC (X-BAPI-SIGN-TYPE: 1 or omitted)
+Else if OAuth credential file exists (Path D) and ai-account is present:
+  - Check expiration: created_at + expires_in > now
+  - If expired: attempt refresh (see [OAuth: Refresh token](#oauth-refresh-token) below)
+  - If refresh fails or no refresh_token: re-run OAuth flow
+  - Use ai-account.api_key as $BYBIT_API_KEY and ai-account.api_secret as $BYBIT_API_SECRET
+  → Select HMAC (same as branch above)
 Else:
   → Tell user:
     "Please configure credentials first.
+     - Quickest: run the OAuth flow (say 'authorize Bybit' or see Path D)
      - HMAC secret string: export BYBIT_API_SECRET=...
      - RSA private key file: export BYBIT_API_PRIVATE_KEY_PATH=/path/to/private.pem
      See Bybit API management for how to create keys."
@@ -278,6 +299,7 @@ Tell the user what they can do. Examples:
 | TWAP, iceberg, chase order, chaseOrder, strategy order, split order, algorithmic, POV, percentage of volume, volume participation | **strategy** | `modules/strategy.md` | account |
 | xStocks, tokenized stock, commodity perpetual, XAUUSDT, XAGUSDT, CLUSDT, crude oil, TradFi, metals agreement, oil agreement | **tradfi** | `modules/tradfi.md` | account, spot, derivatives |
 | card, bybit card, card transaction, card spending, card payment, card history | **card** | `modules/card.md` | account |
+| authorize, OAuth, connect Bybit, login Bybit, 授权, 登录, one-click auth, enable Bybit trade execution, Authorize via OAuth | **oauth** | (inline) | — |
 
 **Module-specific notes:**
 
@@ -288,11 +310,12 @@ Tell the user what they can do. Examples:
 - **Strategy**: Strategy API uses `UTA_*` category format ONLY. Do NOT use `linear`/`spot` — map: `linear` → `UTA_USDT`, `spot` → `UTA_SPOT`, `inverse` → `UTA_INVERSE`. Chase orders: `chaseDistance` and `chasePercentE4` are **mutually exclusive** — use ONE only. **NEVER use `category=linear` or `category=spot` in Strategy API calls** — this will cause errors. Always translate: derivatives/perpetual/futures → `UTA_USDT`, spot → `UTA_SPOT`. **POV** (Percentage of Volume): adapts child order size to live market activity; only supports Perp (NOT spot).
 - **Copy Trading**: The `investmentE8` parameter uses **8-decimal precision** (multiply USDT amount by 10^8). For example, 100 USDT = `10000000000` (100 × 10^8). Always apply this conversion when the user specifies an investment amount in USDT.
 - **TradFi**: Discover instruments via `instruments-info` with `symbolType=xstocks` (spot, e.g., `TSLAXUSDT`) or `symbolType=commodity` (linear, e.g., `XAUUSDT`/`CLUSDT`). Trading reuses standard V5 order endpoints — no TradFi-specific trade API. **Metals (XAU/XAG) and Crude Oil (CL) require a one-time master-account agreement** via `POST /v5/user/agreement` (`categoryV2=2` metals, `categoryV2=3` oil); xStocks do not. Subaccounts inherit eligibility once the master signs. xStocks instruments include extra fields such as `xstockMultiplier`.
+- **OAuth**: This module is inline (no external file to download via manifest). When triggered, follow the [OAuth Authorization Flow](#oauth-authorization-flow) section at the end of this file. After authorization completes, credentials are automatically available for all other modules (spot, derivatives, etc.) via the Runtime Decision logic in Step 3.
 
 ### Routing Notes
 
 - Keywords are **hints, not strict rules** — always use semantic understanding of the user's full request to determine the correct module(s). When ambiguous (e.g., "borrow" could mean spot margin or advanced lending), prefer the module matching the broader conversation context, or ask the user to clarify.
-- Common Chinese synonyms: 查价/看价 → market, 买/卖/现货 → spot, 开多/开空/合约/杠杆 → derivatives, 理财/质押/双币/持币生息/私人财富 → earn, 余额/转账/充值/提币 → account, 跟单 → copy-trading, 网格/DCA → trading-bot, 链上/meme/DEX/代币 → alpha-trade, 代币化股票/特斯拉/苹果/英伟达/黄金/白银/原油/商品永续 → tradfi, 拆单/算法单/POV → strategy, 银行卡/消费记录/刷卡 → card
+- Common Chinese synonyms: 查价/看价 → market, 买/卖/现货 → spot, 开多/开空/合约/杠杆 → derivatives, 理财/质押/双币/持币生息/私人财富 → earn, 余额/转账/充值/提币 → account, 跟单 → copy-trading, 网格/DCA → trading-bot, 链上/meme/DEX/代币 → alpha-trade, 代币化股票/特斯拉/苹果/英伟达/黄金/白银/原油/商品永续 → tradfi, 拆单/算法单/POV → strategy, 银行卡/消费记录/刷卡 → card, 授权/登录/连接Bybit/OAuth → oauth
 
 ### Loading Rules
 
@@ -438,12 +461,13 @@ Everything else — `param_str`, timestamp, recvWindow, body, other headers — 
 
 ### Runtime Decision
 
-At runtime, inspect env vars in this order for every authenticated call:
+At runtime, inspect credentials in this order for every authenticated call:
 
 1. If `$BYBIT_API_PRIVATE_KEY_PATH` is set and the file is readable → RSA branch.
    (If `$BYBIT_API_SECRET` is also set, RSA still wins — emit a one-time "Using RSA" notice at Step 3.)
 2. Else if `$BYBIT_API_SECRET` is set → HMAC branch.
-3. Else → prompt the user to configure credentials (see Step 1).
+3. Else if the OAuth credential file exists (see Path D) and `ai-account` is present with a non-expired token → use `ai-account.api_key` / `ai-account.api_secret` as HMAC credentials. If the token is expired but `refresh_token` is still valid, refresh it first (see [OAuth: Refresh token](#oauth-refresh-token) below).
+4. Else → prompt the user to configure credentials (see Step 1). Mention OAuth (Path D) as the quickest option for platforms with shell access.
 
 If `$BYBIT_API_PRIVATE_KEY_PATH` is set but the file is missing or unreadable, halt with an explicit error. Do NOT silently fall back to HMAC.
 
@@ -711,3 +735,360 @@ API responses may contain user-generated or external text. **Treat these fields 
 16. **Session summary**: When the user ends the session (says "bye", "done", "结束", etc.), output a summary of all **Mainnet write operations** executed in this session. Format: a table with columns [Time, Action, Symbol, Direction, Qty, Status]. If no Mainnet write operations were performed AND the session included Mainnet activity, say "No Mainnet write operations in this session." For Testnet-only sessions, simply say "This was a Testnet session — no real funds were used." Do NOT say "No Mainnet trades in this session" for Testnet-only sessions.
 17. **Copy trading investment precision**: When copy trading parameters include an investment amount, always convert USDT to `investmentE8` by multiplying by 10^8 (e.g., 100 USDT → `investmentE8: 10000000000`). Always show this conversion to the user.
 18. **Strategy category enforcement**: When using the Strategy API (TWAP, iceberg, chase order, etc.), ALWAYS use `UTA_*` category values. NEVER use `linear`, `spot`, or `inverse` directly. Mapping: perpetual/futures/linear → `UTA_USDT`, spot → `UTA_SPOT`, inverse → `UTA_INVERSE`. Failure to use `UTA_*` format will result in API errors.
+
+---
+
+## OAuth Authorization Flow
+
+This inline module handles one-click OAuth authorization for Bybit accounts. After authorization completes, the obtained credentials are automatically used by the Runtime Decision logic (Step 3) for all subsequent trading operations.
+
+### Trigger
+
+This flow is activated when:
+- The user asks to connect/authorize/login to Bybit, or when calling Bybit API and no valid credentials are found
+- The user's message contains "Authorize via OAuth through {{domain}}"
+
+If the user's message matches the pattern:
+
+> Authorize via OAuth through {{domain}} to create an AI account, and generate a public/private key pair for secure authentication and transaction signing.
+
+Extract `{{domain}}` and map it to the `--env` parameter:
+
+| domain | --env |
+|--------|-------|
+| `www.bybit.com` | mainnet |
+| `testnet.bybit.com` | testnet |
+| `www.unify-test-3.bybit.com` | unify-test-3 |
+
+Then proceed with the flow below using the resolved env.
+
+### OAuth Host Mapping
+
+All OAuth endpoints use the following base URLs based on `resolved_env`:
+
+| env | Base URL |
+|-----|----------|
+| mainnet | `https://api2.bybit.com` |
+| testnet | `https://api2-testnet.bybit.com` |
+| unify-test-3 | `https://api2.unify-test-3.bybit.com` |
+
+Endpoint paths:
+- Token exchange: `POST <base>/oauth/v1/public/access_token`
+- Token refresh: `POST <base>/oauth/v1/public/refresh_token`
+- AI accounts: `GET <base>/oauth/v1/resource/restrict/ai_accounts`
+
+### OAuth Step 1: Check existing authorization
+
+Get the credential file path:
+```bash
+node -e "console.log(require('<skill_dir>/modules/oauth.js').getCredentialPath())"
+```
+
+Read the file at that path. If it exists and the token has not expired (`Math.floor(Date.now()/1000) - created_at < expires_in`), use it directly — no re-authorization needed.
+
+If a token exists but `ai-account` credentials are missing, skip to OAuth Step 7.
+
+### OAuth Step 2: Start callback server (background)
+
+Determine the platform-specific output path, then clean up stale files:
+
+```bash
+# macOS/Linux:
+OAUTH_OUTPUT="/tmp/oauth_callback.json"
+OAUTH_INIT="/tmp/oauth_callback_init.json"
+rm -f "$OAUTH_OUTPUT" "$OAUTH_INIT"
+```
+
+```powershell
+# Windows (PowerShell):
+$OAUTH_OUTPUT = "$env:TEMP\oauth_callback.json"
+$OAUTH_INIT = "$env:TEMP\oauth_callback_init.json"
+Remove-Item -Force $OAUTH_OUTPUT, $OAUTH_INIT -ErrorAction SilentlyContinue
+```
+
+Then start the server:
+```bash
+node <skill_dir>/modules/oauth.js --port 9876 --env <resolved_env>
+```
+
+Run with `run_in_background`. The script auto-adapts to all platforms (macOS/Linux/Windows). If the port is occupied, it automatically tries the next available one. Timeout: 2 minutes (auto-exits if no callback received).
+
+The script writes an init file (same directory as output, with `_init.json` suffix) immediately on startup. Read this file to get the authorization URL and parameters. The init file contains an `output_file` field — this is the **exact path** where the callback result will be written.
+
+### OAuth Step 3: Display authorization link and poll for callback (atomic — do NOT end turn)
+
+Read the init file. First output the authorization link to the user:
+
+```
+[<ENV>] Please click the following link to authorize your Bybit account:
+
+<authorize_url from init file>
+```
+
+Then **immediately** (in the same turn, do NOT end your response) run the polling command to wait for the callback.
+
+**macOS/Linux:**
+```bash
+OAUTH_OUTPUT="/tmp/oauth_callback.json"
+for i in $(seq 1 24); do
+  if [ -f "$OAUTH_OUTPUT" ] && node -e "const d=JSON.parse(require('fs').readFileSync('$OAUTH_OUTPUT','utf8'));if(!d.code)process.exit(1)" 2>/dev/null; then
+    cat "$OAUTH_OUTPUT"
+    exit 0
+  fi
+  sleep 5
+done
+echo '{"error":"timeout"}'
+```
+
+**Windows (PowerShell):**
+```powershell
+$OAUTH_OUTPUT = "$env:TEMP\oauth_callback.json"
+for ($i = 1; $i -le 24; $i++) {
+  if (Test-Path $OAUTH_OUTPUT) {
+    $data = Get-Content $OAUTH_OUTPUT -Raw | ConvertFrom-Json
+    if ($data.code) { Get-Content $OAUTH_OUTPUT -Raw; exit 0 }
+  }
+  Start-Sleep -Seconds 5
+}
+Write-Output '{"error":"timeout"}'
+```
+
+⚠️ **CRITICAL PATH RULE:** The polling path MUST match the server's default output path for that platform:
+- macOS/Linux: `/tmp/oauth_callback.json`
+- Windows: `%TEMP%\oauth_callback.json`
+
+Do NOT substitute with any other directory (e.g., `~/.openclaw/tmp/`, `$TMPDIR/`, application-specific tmp dirs). If unsure, read the `output_file` field from the init file — it contains the exact path the server will write to.
+
+⚠️ **Do NOT end your turn before running this poll command. The link output and the poll must happen in the same turn.** The user will click the link while the poll is running.
+
+The link already contains the `code_challenge` and `code_challenge_method=S256` parameters for PKCE verification.
+
+### OAuth Step 4: Process callback result
+
+Once the polling command returns, parse the result:
+
+- If `{"error": "timeout"}`: tell the user authorization timed out, offer to retry
+- If contains `"code"`: proceed to OAuth Step 5 (exchange token)
+
+Result format: `{"code":"xxx","client_id":"ai-agent","code_verifier":"yyy","redirect_uri":"http://127.0.0.1:9876/callback","state":"zzz"}`
+
+**Validate state**: confirm the returned state matches the one from the init file. If mismatched, abort with an error.
+
+After validation, continue through steps 5–7 automatically without stopping, UNLESS multiple sub-accounts require user selection (Step 6).
+
+### OAuth Step 5: Exchange code for token
+
+⚠️ **Authorization codes expire in 10 minutes and are single-use. Execute this step IMMEDIATELY after receiving the code — do NOT add any intermediate steps, thinking, or delays.**
+
+Exchange the code using curl, piping the response directly to a file so tokens never appear in conversation output:
+
+```bash
+CRED_PATH=$(node -e "console.log(require('<skill_dir>/modules/oauth.js').getCredentialPath())")
+mkdir -p "$(dirname "$CRED_PATH")"
+
+curl -s -X POST '<base_url>/oauth/v1/public/access_token' \
+  -d 'client_id=ai-agent' \
+  -d 'code=<code from callback file>' \
+  -d 'code_verifier=<code_verifier from callback file>' \
+  | node -e "
+    const fs=require('fs');
+    let buf='';
+    process.stdin.on('data',c=>buf+=c);
+    process.stdin.on('end',()=>{
+      const resp=JSON.parse(buf);
+      if(resp.retCode!==0){console.log(JSON.stringify({error:resp.retMsg,retCode:resp.retCode}));process.exit(1)}
+      const t=resp.result||resp;
+      t.created_at=Math.floor(Date.now()/1000);
+      t.env='<resolved_env>';
+      fs.writeFileSync(process.env.CRED_PATH,JSON.stringify(t,null,2),{mode:0o600});
+      console.log(JSON.stringify({success:true,step:'token_saved',credential_path:process.env.CRED_PATH}));
+    })"
+```
+
+```powershell
+# Windows:
+$CRED_PATH = node -e "console.log(require('<skill_dir>/modules/oauth.js').getCredentialPath())"
+curl -s -X POST '<base_url>/oauth/v1/public/access_token' `
+  -d 'client_id=ai-agent' `
+  -d 'code=<code from callback file>' `
+  -d 'code_verifier=<code_verifier from callback file>' `
+  | node -e "
+    const fs=require('fs');
+    let buf='';
+    process.stdin.on('data',c=>buf+=c);
+    process.stdin.on('end',()=>{
+      const resp=JSON.parse(buf);
+      if(resp.retCode!==0){console.log(JSON.stringify({error:resp.retMsg,retCode:resp.retCode}));process.exit(1)}
+      const t=resp.result||resp;
+      t.created_at=Math.floor(Date.now()/1000);
+      t.env='<resolved_env>';
+      fs.writeFileSync('$CRED_PATH',JSON.stringify(t,null,2));
+      console.log(JSON.stringify({success:true,step:'token_saved',credential_path:'$CRED_PATH'}));
+    })"
+```
+
+⚠️ **Do NOT add `grant_type`, `redirect_uri`, or any other parameters** — the server only needs `client_id`, `code`, `code_verifier`.
+
+**Error handling:**
+- `retCode=0`: success, token saved. Proceed to Step 6.
+- `retCode=10001` (code expired/used): restart from OAuth Step 2 — do NOT retry with the same code.
+- `retCode=10003`: invalid client_id.
+- Other: display `retMsg`, offer to retry from Step 2.
+
+### OAuth Step 6: Fetch AI sub-account credentials
+
+⚠️ **CRITICAL — Secret Redaction Hazard**: Do NOT write `ACCESS_TOKEN="eyJ..."` or any raw token value inline in shell commands. AI assistant runtime environments automatically redact secrets in command text, which causes the literal string `***` to be sent to the server instead of the real token. **Always read secrets from file at runtime** using `$(node -e "...")` command substitution.
+
+```bash
+ACCESS_TOKEN=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CRED_PATH','utf8'));process.stdout.write(d.access_token)")
+curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+  '<base_url>/oauth/v1/resource/restrict/ai_accounts'
+```
+
+**Response handling:**
+- **`retCode` !== 0 (error)**: Display the error message to the user:
+  ```
+  ❌ 获取 AI 子账户失败：<retMsg> (retCode: <retCode>)
+  ```
+  Common errors:
+  - `retCode=33004`: token expired — refresh token first (see "OAuth: Refresh token"), then retry.
+  - `retCode=401` or `retCode=10001`: unauthorized — token may be invalid, re-authenticate from Step 2.
+  - Other: display `retMsg` verbatim and ask user how to proceed.
+- **Single account with `api_key` in response** (server auto-selected): proceed to Step 7.
+- **One or more accounts** (response is a list without `api_key`): always display for user selection (even if only 1 account — let the user choose between it and creating a new one), then re-fetch with `sub_member_id`:
+  ```bash
+  ACCESS_TOKEN=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CRED_PATH','utf8'));process.stdout.write(d.access_token)")
+  curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+    '<base_url>/oauth/v1/resource/restrict/ai_accounts?sub_member_id=<selected_id>'
+  ```
+
+### OAuth Step 7: Save API credentials
+
+Save `api_key` and `api_secret` from the response into the credential file under `ai-account`:
+
+```bash
+node -e "
+  const fs=require('fs');
+  const cred=JSON.parse(fs.readFileSync('$CRED_PATH','utf8'));
+  const aiResp=<paste ai_accounts response JSON here>;
+  const acct=Array.isArray(aiResp.result)?aiResp.result[0]:aiResp.result;
+  cred['ai-account']={sub_member_id:acct.sub_member_id,api_key:acct.api_key,api_secret:acct.api_secret};
+  fs.writeFileSync('$CRED_PATH',JSON.stringify(cred,null,2),{mode:0o600});
+  console.log(JSON.stringify({success:true,step:'complete',sub_member_id:acct.sub_member_id,api_key_masked:acct.api_key.slice(0,5)+'...'+acct.api_key.slice(-4)}));
+"
+```
+
+**Alternative — use `--exchange` for Step 6+7 only** (skips token exchange if credential file already has a valid token):
+
+```bash
+node <skill_dir>/modules/oauth.js --exchange /tmp/oauth_callback.json --env <resolved_env>
+```
+
+This reads the existing token from the credential file and only fetches AI accounts. Use `--sub-member-id <id>` for sub-account selection.
+
+**`--exchange` output when AI accounts fetch fails:** If the JSON output contains `ai_account_error`, display the error to the user:
+```
+❌ 获取 AI 子账户失败：<ai_account_error> (retCode: <ai_account_retCode>)
+```
+Token is already saved — suggest refreshing the token or retrying.
+
+**Multiple sub-account selection UI:**
+
+When Step 6 returns one or more accounts as a list (without `api_key`), display:
+
+```
+你有多个 AI 子账户，请选择要使用哪个：
+
+1. MyBot-Trading (123456)
+2. AlphaStrategy (789012)（上次用的）
+3. TestAccount (345678)
+4. ➕ 创建新 AI 子账号
+
+选哪个？
+```
+
+- The "创建新 AI 子账号" option is shown **only when accounts < 5** (i.e., `can_create: true` in `--exchange` output).
+- If user selects an existing account: re-fetch with `sub_member_id` as shown in Step 6, then save in Step 7.
+- If user selects "创建新 AI 子账号": call the same endpoint with `is_create=true`:
+  ```bash
+  ACCESS_TOKEN=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CRED_PATH','utf8'));process.stdout.write(d.access_token)")
+  curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+    '<base_url>/oauth/v1/resource/restrict/ai_accounts?is_create=true'
+  ```
+  Or via module: `node <skill_dir>/modules/oauth.js --exchange /tmp/oauth_callback.json --env <resolved_env> --is-create`
+  
+  Then save the returned credentials in Step 7.
+
+### OAuth Step 8: Notify user
+
+Output:
+```
+[<ENV>] Bybit authorization successful.
+AI sub-account: <sub_member_id>
+API Key: <first 5 chars>...<last 4 chars>
+Credentials saved to: <credential_path>
+```
+
+**Do NOT generate RSA key pairs during OAuth flow.** OAuth provides `api_key` and `api_secret` directly — use HMAC signing. RSA key generation is only for the manual "Path A" flow (AI Subaccount created via Bybit app).
+
+**Display rules** (never show full credentials):
+- API Key: show first 5 + last 4 characters (e.g., `AbCdE...x1y2`)
+- API Secret: show last 5 only (e.g., `***...vWxYz`)
+- access_token / refresh_token: never display
+
+### OAuth: Refresh token
+
+**When to refresh:** Before any API call, check if access_token is expired: `Math.floor(Date.now()/1000) - created_at >= expires_in`.
+
+**When refresh_token itself is expired** (`Math.floor(Date.now()/1000) - created_at >= refresh_token_expires_in`): the refresh_token cannot be used. Re-run the full OAuth flow from OAuth Step 2.
+
+To refresh, use the base URL for the stored env. **Always read the refresh_token from the credential file** (never inline it):
+
+```bash
+REFRESH_TOKEN=$(node -e "const f=require('fs');const d=JSON.parse(f.readFileSync('<cred_path>','utf8'));process.stdout.write(d.refresh_token)")
+curl -s -X POST '<base_url>/oauth/v1/public/refresh_token' \
+  -d 'client_id=ai-agent' \
+  -d "refresh_token=$REFRESH_TOKEN"
+```
+
+**Error handling:**
+- `retCode=0`: success, update credential file
+- `retCode=10001/10004`: refresh_token invalid or expired — re-run full OAuth flow from OAuth Step 2
+- Network failure: retry once after 2 seconds, then inform user
+
+After refresh, update `access_token`, `refresh_token`, and `created_at` in the credential file. Preserve `ai-account` and other fields.
+
+### OAuth: Switch AI sub-account
+
+If the user wants to switch sub-accounts:
+
+1. Read the credential file to get access_token (refresh if expired)
+2. Read access_token from file and call the AI accounts endpoint:
+   ```bash
+   ACCESS_TOKEN=$(node -e "const f=require('fs');const d=JSON.parse(f.readFileSync('<cred_path>','utf8'));process.stdout.write(d.access_token)")
+   curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+     '<base_url>/oauth/v1/resource/restrict/ai_accounts'
+   ```
+   If `retCode` !== 0, display: `❌ 获取 AI 子账户失败：<retMsg> (retCode: <retCode>)` and stop.
+3. Let the user choose
+4. Fetch credentials for the selected sub-account:
+   ```bash
+   ACCESS_TOKEN=$(node -e "const f=require('fs');const d=JSON.parse(f.readFileSync('<cred_path>','utf8'));process.stdout.write(d.access_token)")
+   curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+     '<base_url>/oauth/v1/resource/restrict/ai_accounts?sub_member_id=<selected_id>'
+   ```
+5. Update the `ai-account` field in the credential file
+
+⚠️ **Reminder**: Never inline token values directly in shell commands. Always use `$(node -e "...")` to read from the credential file. See the Secret Redaction Hazard note in OAuth Step 6.
+
+### OAuth: Credential location
+
+The credential file path is determined automatically by the script (cross-platform). Other modules/skills can get it via:
+
+```bash
+node -e "console.log(require('<skill_dir>/modules/oauth.js').getCredentialPath())"
+```
+
+File contents include:
+- `access_token` — for calling OAuth-protected endpoints
+- `ai-account.api_key` + `ai-account.api_secret` — for calling Bybit Open API directly (used by Runtime Decision in Step 3)
