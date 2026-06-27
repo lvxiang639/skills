@@ -241,8 +241,8 @@ async function exchangeAndSave(args) {
 
   const aiResult = aiResp.result || aiResp;
 
-  // Sub-accounts returned as list (without credentials) — always prompt selection, even for 1 account
-  if (Array.isArray(aiResult) && aiResult.length >= 1 && !aiResult[0].api_key) {
+  // Always prompt selection when accounts are returned as a list (regardless of api_key presence)
+  if (Array.isArray(aiResult) && aiResult.length >= 1) {
     const accounts = aiResult.map((a) => ({
       sub_member_id: a.sub_member_id,
       nickname: a.nickname || "",
@@ -258,8 +258,8 @@ async function exchangeAndSave(args) {
     process.exit(0);
   }
 
-  // Single account or specific sub_member_id selected — has credentials
-  const aiAccount = Array.isArray(aiResult) ? aiResult[0] : aiResult;
+  // Specific sub_member_id selected (or non-array response) — has credentials
+  const aiAccount = aiResult;
   if (aiAccount && aiAccount.api_key) {
     credential["ai-account"] = {
       sub_member_id: aiAccount.sub_member_id,

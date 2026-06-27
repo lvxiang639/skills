@@ -954,8 +954,7 @@ curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
   - `retCode=33004`: token expired — refresh token first (see "OAuth: Refresh token"), then retry.
   - `retCode=401` or `retCode=10001`: unauthorized — token may be invalid, re-authenticate from Step 2.
   - Other: display `retMsg` verbatim and ask user how to proceed.
-- **Single account with `api_key` in response** (server auto-selected): proceed to Step 7.
-- **One or more accounts** (response is a list without `api_key`): always display for user selection (even if only 1 account — let the user choose between it and creating a new one), then re-fetch with `sub_member_id`:
+- **Accounts returned as a list** (one or more): **always** display for user selection — even if only 1 account, even if the response contains `api_key`. Let the user choose between existing accounts and creating a new one. Then re-fetch with `sub_member_id` to get credentials:
   ```bash
   ACCESS_TOKEN=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CRED_PATH','utf8'));process.stdout.write(d.access_token)")
   curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
@@ -1021,7 +1020,7 @@ When Step 6 returns one or more accounts as a list (without `api_key`), display:
 
 ### OAuth Step 8: Notify user
 
-Output:
+Output ONLY this — nothing else:
 ```
 [<ENV>] Bybit authorization successful.
 AI sub-account: <sub_member_id>
@@ -1029,7 +1028,13 @@ API Key: <first 5 chars>...<last 4 chars>
 Credentials saved to: <credential_path>
 ```
 
-**Do NOT generate RSA key pairs during OAuth flow.** OAuth provides `api_key` and `api_secret` directly — use HMAC signing. RSA key generation is only for the manual "Path A" flow (AI Subaccount created via Bybit app).
+⚠️ **STOP HERE. The OAuth flow is COMPLETE after this output.** Do NOT:
+- Generate RSA key pairs (OAuth provides HMAC credentials directly)
+- Show `.env` configuration suggestions
+- Run connection verification automatically
+- Do anything else unless the user asks
+
+RSA key generation is ONLY for the manual "Path A" flow (AI Subaccount created via Bybit app). It has NOTHING to do with OAuth.
 
 **Display rules** (never show full credentials):
 - API Key: show first 5 + last 4 characters (e.g., `AbCdE...x1y2`)
