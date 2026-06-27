@@ -1,0 +1,23 @@
+SKILL.md
+  488776c5235b239c 957-961
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.2-bit.9+daa2e24",
+  "base_commit_sha": "d9cea3e2b7a15c788fe5f138bb71e74999b58268",
+  "prompts": {
+    "488776c5235b239c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4381c230-999a-4115-a4ec-a92d044294b6",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "oliver.lv",
+      "messages": [],
+      "total_additions": 5,
+      "total_deletions": 25,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    }
+  }
+}
