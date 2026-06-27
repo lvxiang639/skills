@@ -396,7 +396,7 @@ async function main(args) {
 
   server.listen(port, "127.0.0.1");
 
-  const TIMEOUT_MS = 120000;
+  const TIMEOUT_MS = 300000;
   const timer = setTimeout(() => {
     const errResult = { error: "timeout" };
     fs.writeFileSync(args.output, JSON.stringify(errResult));

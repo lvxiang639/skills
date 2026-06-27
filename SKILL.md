@@ -830,7 +830,7 @@ Then **immediately** (in the same turn, do NOT end your response) run the pollin
 **macOS/Linux:**
 ```bash
 OAUTH_OUTPUT="/tmp/oauth_callback.json"
-for i in $(seq 1 24); do
+for i in $(seq 1 60); do
   if [ -f "$OAUTH_OUTPUT" ] && node -e "const d=JSON.parse(require('fs').readFileSync('$OAUTH_OUTPUT','utf8'));if(!d.code)process.exit(1)" 2>/dev/null; then
     cat "$OAUTH_OUTPUT"
     exit 0
@@ -843,7 +843,7 @@ echo '{"error":"timeout"}'
 **Windows (PowerShell):**
 ```powershell
 $OAUTH_OUTPUT = "$env:TEMP\oauth_callback.json"
-for ($i = 1; $i -le 24; $i++) {
+for ($i = 1; $i -le 60; $i++) {
   if (Test-Path $OAUTH_OUTPUT) {
     $data = Get-Content $OAUTH_OUTPUT -Raw | ConvertFrom-Json
     if ($data.code) { Get-Content $OAUTH_OUTPUT -Raw; exit 0 }
@@ -868,9 +868,7 @@ The link already contains the `code_challenge` and `code_challenge_method=S256` 
 Once the polling command returns, parse the result:
 
 - If `{"error": "timeout"}`: tell the user authorization timed out, offer to retry
-- If contains `"code"`: proceed to OAuth Step 5 (exchange token)
-
-Result format: `{"code":"xxx","client_id":"ai-agent","code_verifier":"yyy","redirect_uri":"http://127.0.0.1:9876/callback","state":"zzz"}`
+- If contains `"code"`: proceed to OAuth Step 5 (exchange token immediately)
 
 **Validate state**: confirm the returned state matches the one from the init file. If mismatched, abort with an error.
 
