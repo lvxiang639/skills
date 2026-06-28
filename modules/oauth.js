@@ -181,7 +181,7 @@ async function exchangeAndSave(args) {
       code: callback.code,
       code_verifier: callback.code_verifier,
     });
-    if (!tokenResp || tokenResp.retCode !== 0) {
+    if (!tokenResp || (tokenResp.retCode !== undefined && tokenResp.retCode !== 0 && !tokenResp.access_token)) {
       process.stdout.write(JSON.stringify({
         success: false,
         error: "token_exchange_failed",
@@ -226,13 +226,14 @@ async function exchangeAndSave(args) {
     Authorization: `Bearer ${credential.access_token}`,
   });
 
-  if (!aiResp || aiResp.retCode !== 0) {
-    // Token saved but AI account fetch failed
+  const aiRetCode = aiResp?.retCode ?? aiResp?.ret_code;
+  const aiRetMsg = aiResp?.retMsg ?? aiResp?.ret_msg;
+  if (!aiResp || (aiRetCode !== undefined && aiRetCode !== 0)) {
     process.stdout.write(JSON.stringify({
       success: true,
       step: "token_saved",
-      ai_account_error: aiResp?.retMsg || "Failed to fetch AI accounts",
-      ai_account_retCode: aiResp?.retCode,
+      ai_account_error: aiRetMsg || "Failed to fetch AI accounts",
+      ai_account_retCode: aiRetCode,
       credential_path: credPath,
       needs_sub_account_selection: false,
     }) + "\n");

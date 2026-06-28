@@ -894,7 +894,7 @@ curl -s -X POST '<base_url>/oauth/v1/public/access_token' \
     process.stdin.on('data',c=>buf+=c);
     process.stdin.on('end',()=>{
       const resp=JSON.parse(buf);
-      if(resp.retCode!==0){console.log(JSON.stringify({error:resp.retMsg,retCode:resp.retCode}));process.exit(1)}
+      if(resp.retCode!==undefined&&resp.retCode!==0&&!resp.access_token){console.log(JSON.stringify({error:resp.retMsg,retCode:resp.retCode}));process.exit(1)}
       const t=resp.result||resp;
       t.created_at=Math.floor(Date.now()/1000);
       t.env='<resolved_env>';
@@ -916,7 +916,7 @@ curl -s -X POST '<base_url>/oauth/v1/public/access_token' `
     process.stdin.on('data',c=>buf+=c);
     process.stdin.on('end',()=>{
       const resp=JSON.parse(buf);
-      if(resp.retCode!==0){console.log(JSON.stringify({error:resp.retMsg,retCode:resp.retCode}));process.exit(1)}
+      if(resp.retCode!==undefined&&resp.retCode!==0&&!resp.access_token){console.log(JSON.stringify({error:resp.retMsg,retCode:resp.retCode}));process.exit(1)}
       const t=resp.result||resp;
       t.created_at=Math.floor(Date.now()/1000);
       t.env='<resolved_env>';
