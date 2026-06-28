@@ -949,9 +949,10 @@ curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
   ❌ 获取 AI 子账户失败：<retMsg> (retCode: <retCode>)
   ```
   Common errors:
+  - `ret_code=20039`: display `ret_msg` verbatim and **STOP the entire OAuth flow**. Do NOT retry, do NOT proceed to Step 7. This is a terminal error.
   - `retCode=33004`: token expired — refresh token first (see "OAuth: Refresh token"), then retry.
   - `retCode=401` or `retCode=10001`: unauthorized — token may be invalid, re-authenticate from Step 2.
-  - Other: display `retMsg` verbatim and ask user how to proceed.
+  - Other: display `retMsg`/`ret_msg` verbatim and ask user how to proceed.
 - ⚠️ **MANDATORY — NO EXCEPTIONS:** When the endpoint returns ANY accounts (one or more, with or without `api_key`), you **MUST** display the account selection list and **wait for user input**. **NEVER** auto-select an account. **NEVER** skip to Step 7 without the user's explicit choice — not even if there is only 1 account.
   - ❌ WRONG: "只有一个账号，直接使用" (auto-selecting)
   - ✅ CORRECT: show numbered list + "创建新 AI 子账号" option → wait for user reply

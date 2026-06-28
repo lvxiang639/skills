@@ -229,15 +229,16 @@ async function exchangeAndSave(args) {
   const aiRetCode = aiResp?.retCode ?? aiResp?.ret_code;
   const aiRetMsg = aiResp?.retMsg ?? aiResp?.ret_msg;
   if (!aiResp || (aiRetCode !== undefined && aiRetCode !== 0)) {
+    const isTerminal = aiRetCode === 20039;
     process.stdout.write(JSON.stringify({
-      success: true,
-      step: "token_saved",
+      success: !isTerminal,
+      step: isTerminal ? "terminal_error" : "token_saved",
       ai_account_error: aiRetMsg || "Failed to fetch AI accounts",
       ai_account_retCode: aiRetCode,
       credential_path: credPath,
       needs_sub_account_selection: false,
     }) + "\n");
-    process.exit(0);
+    process.exit(isTerminal ? 1 : 0);
   }
 
   const aiResult = aiResp.result || aiResp;
