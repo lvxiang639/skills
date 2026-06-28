@@ -243,9 +243,10 @@ async function exchangeAndSave(args) {
 
   const aiResult = aiResp.result || aiResp;
 
-  // Always prompt selection when accounts are returned as a list (regardless of api_key presence)
-  if (Array.isArray(aiResult) && aiResult.length >= 1) {
-    const accounts = aiResult.map((a) => ({
+  // Always prompt selection when accounts are returned as a list (including empty list)
+  const accountList = Array.isArray(aiResult) ? aiResult : (aiResult?.accounts ? aiResult.accounts : null);
+  if (Array.isArray(accountList)) {
+    const accounts = accountList.map((a) => ({
       sub_member_id: a.sub_member_id,
       nickname: a.nickname || "",
     }));
