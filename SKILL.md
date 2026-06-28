@@ -872,7 +872,7 @@ Once the polling command returns, parse the result:
 
 **Validate state**: confirm the returned state matches the one from the init file. If mismatched, abort with an error.
 
-After validation, continue through steps 5–7 automatically without stopping, UNLESS multiple sub-accounts require user selection (Step 6).
+After validation, proceed to Step 5 (exchange token) immediately. After token exchange, continue to Step 6 to fetch accounts, then ALWAYS display the selection UI and wait for user input before proceeding to Step 7.
 
 ### OAuth Step 5: Exchange code for token
 
@@ -943,8 +943,8 @@ curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
   '<base_url>/oauth/v1/resource/restrict/ai_accounts'
 ```
 
-**Response handling:**
-- **`retCode` !== 0 (error)**: Display the error message to the user:
+**Response handling** (note: this endpoint may return errors as `retCode`/`retMsg` or `ret_code`/`ret_msg` — check both):
+- **`retCode`/`ret_code` !== 0 (error)**: Display the error message to the user:
   ```
   ❌ 获取 AI 子账户失败：<retMsg> (retCode: <retCode>)
   ```
