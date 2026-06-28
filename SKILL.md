@@ -953,8 +953,9 @@ curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
   - `retCode=33004`: token expired — refresh token first (see "OAuth: Refresh token"), then retry.
   - `retCode=401` or `retCode=10001`: unauthorized — token may be invalid, re-authenticate from Step 2.
   - Other: display `retMsg`/`ret_msg` verbatim and ask user how to proceed.
-- ⚠️ **MANDATORY — NO EXCEPTIONS:** When the endpoint returns ANY accounts (one or more, with or without `api_key`), you **MUST** display the account selection list and **wait for user input**. **NEVER** auto-select an account. **NEVER** skip to Step 7 without the user's explicit choice — not even if there is only 1 account.
+- ⚠️ **MANDATORY — NO EXCEPTIONS:** When the endpoint returns accounts (including an empty list), you **MUST** display the selection list and **wait for user input**. **NEVER** auto-select an account. **NEVER** auto-create an account. **NEVER** skip to Step 7 without the user's explicit choice — not even if there is only 1 account, not even if the list is empty and "create" is the only option.
   - ❌ WRONG: "只有一个账号，直接使用" (auto-selecting)
+  - ❌ WRONG: "没有子账号，自动创建" (auto-creating)
   - ✅ CORRECT: show numbered list + "创建新 AI 子账号" option → wait for user reply
   
   After user selects, re-fetch with `sub_member_id` to get credentials:
