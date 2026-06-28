@@ -949,7 +949,7 @@ curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
   ❌ 获取 AI 子账户失败：<retMsg> (retCode: <retCode>)
   ```
   Common errors:
-  - `ret_code=20039`: display "请先绑定 2FA 再操作" and **STOP the entire OAuth flow**. Do NOT retry, do NOT proceed to Step 7. This is a terminal error.
+  - `ret_code=20039`: display "Please bind 2FA before proceeding." and **STOP the entire OAuth flow**. Do NOT retry, do NOT proceed to Step 7. This is a terminal error.
   - `retCode=33004`: token expired — refresh token first (see "OAuth: Refresh token"), then retry.
   - `retCode=401` or `retCode=10001`: unauthorized — token may be invalid, re-authenticate from Step 2.
   - Other: display `retMsg`/`ret_msg` verbatim and ask user how to proceed.
